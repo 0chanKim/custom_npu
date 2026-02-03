@@ -1,0 +1,6 @@
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "/home/yc/idsl_npu/rtl/compute/mac_unit.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module mac_unit
+INFO: [VRFC 10-2263] Analyzing SystemVerilog file "/home/yc/idsl_npu/tb/mac_unit_tb.sv" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module mac_unit_tb
+INFO: [VRFC 10-2263] Analyzing Verilog file "/home/yc/idsl_npu/npu_vivado/project_1/project_1.sim/sim_1/behav/xsim/glbl.v" into library xil_defaultlib
+INFO: [VRFC 10-311] analyzing module glbl

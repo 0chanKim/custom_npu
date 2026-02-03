@@ -1,0 +1,40 @@
+#-----------------------------------------------------------
+# Vivado v2023.1 (64-bit)
+# SW Build 3865809 on Sun May  7 15:04:56 MDT 2023
+# IP Build 3864474 on Sun May  7 20:36:21 MDT 2023
+# SharedData Build 3865790 on Sun May 07 13:33:03 MDT 2023
+# Start of session at: Tue Feb  3 00:22:11 2026
+# Process ID: 781703
+# Current directory: /home/yc/idsl_npu/npu_vivado
+# Command line: vivado
+# Log file: /home/yc/idsl_npu/npu_vivado/vivado.log
+# Journal file: /home/yc/idsl_npu/npu_vivado/vivado.jou
+# Running On: CORE, OS: Linux, CPU Frequency: 3200.000 MHz, CPU Physical cores: 8, Host memory: 134909 MB
+#-----------------------------------------------------------
+start_gui
+create_project project_1 /home/yc/idsl_npu/npu_vivado/project_1 -part xczu9eg-ffvb1156-2-e
+set_property board_part xilinx.com:zcu102:part0:3.4 [current_project]
+set_property  ip_repo_paths  {/home/yc/ip_repo /home/yc/yc_mb2/ip_repo} [current_project]
+update_ip_catalog
+set_property platform.extensible true [current_project]
+open_hw_manager
+connect_hw_server -allow_non_jtag
+disconnect_hw_server localhost:3121
+connect_hw_server -allow_non_jtag
+close_hw_manager
+add_files -norecurse -scan_for_includes {/home/yc/idsl_npu/rtl/compute/pe_array_cluster.sv /home/yc/idsl_npu/rtl/top/npu_top.sv /home/yc/idsl_npu/rtl/interface/axi_lite_slave.sv /home/yc/idsl_npu/rtl/pkg/npu_pkg.sv /home/yc/idsl_npu/rtl/compute/mac_unit.sv /home/yc/idsl_npu/rtl/compute/gemv_subarray.sv /home/yc/idsl_npu/rtl/compute/large_pe_array.sv /home/yc/idsl_npu/rtl/compute/pe_unit.sv}
+update_compile_order -fileset sources_1
+update_compile_order -fileset sources_1
+set_property SOURCE_SET sources_1 [get_filesets sim_1]
+add_files -fileset sim_1 -norecurse -scan_for_includes {/home/yc/idsl_npu/tb/gemv_subarray_tb.sv /home/yc/idsl_npu/tb/mac_unit_tb.sv}
+update_compile_order -fileset sim_1
+# Disabling source management mode.  This is to allow the top design properties to be set without GUI intervention.
+set_property source_mgmt_mode None [current_project]
+set_property top mac_unit_tb [get_filesets sim_1]
+set_property top_lib xil_defaultlib [get_filesets sim_1]
+# Re-enabling previously disabled source management mode.
+set_property source_mgmt_mode All [current_project]
+update_compile_order -fileset sim_1
+launch_simulation
+source mac_unit_tb.tcl
+run all

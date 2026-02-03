@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(make clean:*)",
+      "Bash(make)",
+      "Bash(./npu_ref)",
+      "Bash(ls:*)"
+    ]
+  }
+}
