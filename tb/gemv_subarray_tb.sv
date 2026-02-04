@@ -19,7 +19,7 @@ module gemv_subarray_tb;
     parameter int CLK_PERIOD    = 10;
 
     // Test data path (update this path for your environment)
-    parameter string DATA_PATH = "/home/yc/idsl_npu/sw/ref/";
+    parameter string DATA_PATH = "/home/yc/yc_npu/sw/ref/";
 
     //-------------------------------------------------------------------------
     // DUT Signals

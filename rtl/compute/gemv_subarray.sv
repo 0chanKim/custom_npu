@@ -36,10 +36,11 @@ module gemv_subarray #(
     // Internal Signals
     //-------------------------------------------------------------------------
     logic [SUBARRAY_ROWS-1:0][SUBARRAY_COLS-1:0][OUTPUT_WIDTH-1:0] mac_outputs;
+    logic [SUBARRAY_ROWS-1:0][SUBARRAY_COLS-1:0] mac_valid;
     logic [SUBARRAY_ROWS-1:0][OUTPUT_WIDTH-1:0] row_sums;
 
-    // Pipeline registers for valid signal
-    logic valid_d1, valid_d2;
+    // Valid pipeline (1 stage for output register after MAC valid)
+    logic mac_valid_ref;
 
     //-------------------------------------------------------------------------
     // Generate MAC Units - One per weight element
@@ -59,7 +60,8 @@ module gemv_subarray #(
                     .clear_acc  (clear_acc),
                     .data_in    (input_vector[col]),
                     .weight_in  (weight_matrix[row][col]),
-                    .data_out   (mac_outputs[row][col])
+                    .data_out   (mac_outputs[row][col]),
+                    .valid_out  (mac_valid[row][col])
                 );
             end
         end
@@ -80,28 +82,31 @@ module gemv_subarray #(
     endgenerate
 
     //-------------------------------------------------------------------------
-    // Output Register
+    // MAC Valid Reference (all MACs share the same timing)
+    //-------------------------------------------------------------------------
+    assign mac_valid_ref = mac_valid[0][0];
+
+    //-------------------------------------------------------------------------
+    // Output Register - capture when MAC results are valid
     //-------------------------------------------------------------------------
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             output_vector <= '0;
-        end else if (enable) begin
+        end else if (mac_valid_ref) begin
             output_vector <= row_sums;
         end
     end
 
     //-------------------------------------------------------------------------
     // Valid Signal Pipeline
+    // MAC valid_out fires 2 cycles after enable (mult_reg + acc_reg)
+    // Output register adds 1 more cycle -> total 3 cycles from enable
     //-------------------------------------------------------------------------
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            valid_d1  <= 1'b0;
-            valid_d2  <= 1'b0;
             valid_out <= 1'b0;
         end else begin
-            valid_d1  <= enable & ~clear_acc;
-            valid_d2  <= valid_d1;
-            valid_out <= valid_d2;
+            valid_out <= mac_valid_ref;
         end
     end
 

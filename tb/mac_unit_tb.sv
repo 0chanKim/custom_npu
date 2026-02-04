@@ -18,7 +18,7 @@ module mac_unit_tb;
     parameter int NUM_OPS      = 289;
 
     // Test data path (update this path for your environment)
-    parameter string DATA_PATH = "/home/yc/idsl_npu/sw/ref/";
+    parameter string DATA_PATH = "/home/yc/yc_npu/sw/ref/";
 
     //-------------------------------------------------------------------------
     // DUT Signals
@@ -30,6 +30,7 @@ module mac_unit_tb;
     logic signed [INPUT_WIDTH-1:0]    data_in;
     logic signed [WEIGHT_WIDTH-1:0]   weight_in;
     logic signed [OUTPUT_WIDTH-1:0]   data_out;
+    logic                      valid_out;
 
     //-------------------------------------------------------------------------
     // Reference Data Memory
@@ -60,7 +61,8 @@ module mac_unit_tb;
         .clear_acc  (clear_acc),
         .data_in    (data_in),
         .weight_in  (weight_in),
-        .data_out   (data_out)
+        .data_out   (data_out),
+        .valid_out  (valid_out)
     );
 
     //-------------------------------------------------------------------------
@@ -97,6 +99,7 @@ module mac_unit_tb;
     endtask
 
     // Single MAC operation from reference data
+    // Pipeline latency: 2 cycles (Stage1: mult_reg, Stage2: acc_reg)
     task automatic do_mac_op(int idx);
         @(posedge clk);
         // Apply clear if flagged
@@ -115,7 +118,8 @@ module mac_unit_tb;
         enable    <= 1;
         @(posedge clk);
         enable    <= 0;
-        @(posedge clk);  // Wait for result to propagate
+        @(posedge clk);  // Stage 1: mult_reg captured
+        @(posedge clk);  // Stage 2: acc_reg updated (valid_out asserted)
     endtask
 
     // Check result against reference
@@ -196,6 +200,225 @@ module mac_unit_tb;
         end
 
         //=====================================================================
+        // Back-to-Back Streaming Tests (enable high every cycle)
+        //=====================================================================
+        $display("");
+        $display("--- Back-to-Back Streaming Tests ---");
+
+        // B2B-1: 8 consecutive (1 * 1) = 8
+        begin
+            clear_acc <= 1;
+            @(posedge clk);
+            clear_acc <= 0;
+            for (int i = 0; i < 8; i++) begin
+                data_in   <= 1;
+                weight_in <= 1;
+                enable    <= 1;
+                @(posedge clk);
+            end
+            enable <= 0;
+            @(posedge clk);  // drain Stage 1
+            @(posedge clk);  // drain Stage 2
+
+            test_count++;
+            if (data_out === 32'sd8) begin
+                pass_count++;
+                $display("  [PASS] B2B-1: 8x(1*1) = %0d", data_out);
+            end else begin
+                fail_count++;
+                $display("  [FAIL] B2B-1: 8x(1*1) = %0d, expected 8", data_out);
+            end
+        end
+
+        // B2B-2: 4 consecutive (3 * 7) = 84
+        begin
+            clear_acc <= 1;
+            @(posedge clk);
+            clear_acc <= 0;
+            for (int i = 0; i < 4; i++) begin
+                data_in   <= 3;
+                weight_in <= 7;
+                enable    <= 1;
+                @(posedge clk);
+            end
+            enable <= 0;
+            @(posedge clk);
+            @(posedge clk);
+
+            test_count++;
+            if (data_out === 32'sd84) begin
+                pass_count++;
+                $display("  [PASS] B2B-2: 4x(3*7) = %0d", data_out);
+            end else begin
+                fail_count++;
+                $display("  [FAIL] B2B-2: 4x(3*7) = %0d, expected 84", data_out);
+            end
+        end
+
+        // B2B-3: Mixed signed back-to-back
+        // (-3*5) + (7*-2) + (4*6) + (-1*-8) = -15 + -14 + 24 + 8 = 3
+        begin
+            clear_acc <= 1;
+            @(posedge clk);
+            clear_acc <= 0;
+
+            data_in <= -3; weight_in <=  5; enable <= 1;
+            @(posedge clk);
+            data_in <=  7; weight_in <= -2; enable <= 1;
+            @(posedge clk);
+            data_in <=  4; weight_in <=  6; enable <= 1;
+            @(posedge clk);
+            data_in <= -1; weight_in <= -8; enable <= 1;
+            @(posedge clk);
+            enable <= 0;
+            @(posedge clk);
+            @(posedge clk);
+
+            test_count++;
+            if (data_out === 32'sd3) begin
+                pass_count++;
+                $display("  [PASS] B2B-3: mixed signed = %0d", data_out);
+            end else begin
+                fail_count++;
+                $display("  [FAIL] B2B-3: mixed signed = %0d, expected 3", data_out);
+            end
+        end
+
+        // B2B-4: Max positive saturation stress
+        // 127 * 127 = 16129, 16 consecutive = 258064
+        begin
+            clear_acc <= 1;
+            @(posedge clk);
+            clear_acc <= 0;
+            for (int i = 0; i < 16; i++) begin
+                data_in   <= 127;
+                weight_in <= 127;
+                enable    <= 1;
+                @(posedge clk);
+            end
+            enable <= 0;
+            @(posedge clk);
+            @(posedge clk);
+
+            test_count++;
+            if (data_out === 32'sd258064) begin
+                pass_count++;
+                $display("  [PASS] B2B-4: 16x(127*127) = %0d", data_out);
+            end else begin
+                fail_count++;
+                $display("  [FAIL] B2B-4: 16x(127*127) = %0d, expected 258064", data_out);
+            end
+        end
+
+        // B2B-5: Max negative stress
+        // -128 * 127 = -16256, 8 consecutive = -130048
+        begin
+            clear_acc <= 1;
+            @(posedge clk);
+            clear_acc <= 0;
+            for (int i = 0; i < 8; i++) begin
+                data_in   <= -128;
+                weight_in <= 127;
+                enable    <= 1;
+                @(posedge clk);
+            end
+            enable <= 0;
+            @(posedge clk);
+            @(posedge clk);
+
+            test_count++;
+            if (data_out === -32'sd130048) begin
+                pass_count++;
+                $display("  [PASS] B2B-5: 8x(-128*127) = %0d", data_out);
+            end else begin
+                fail_count++;
+                $display("  [FAIL] B2B-5: 8x(-128*127) = %0d, expected -130048", data_out);
+            end
+        end
+
+        // B2B-6: Clear mid-stream pipeline flush test
+        // Stream 4x(2*3)=24, then clear, then 3x(5*4)=60
+        // Expected final result: 60 (clear should flush pipeline)
+        begin
+            clear_acc <= 1;
+            @(posedge clk);
+            clear_acc <= 0;
+
+            // First burst: 4x(2*3)
+            for (int i = 0; i < 4; i++) begin
+                data_in   <= 2;
+                weight_in <= 3;
+                enable    <= 1;
+                @(posedge clk);
+            end
+            enable <= 0;
+            @(posedge clk);
+            @(posedge clk);
+
+            // Clear accumulator (should flush pipeline)
+            clear_acc <= 1;
+            @(posedge clk);
+            clear_acc <= 0;
+
+            // Second burst: 3x(5*4)
+            for (int i = 0; i < 3; i++) begin
+                data_in   <= 5;
+                weight_in <= 4;
+                enable    <= 1;
+                @(posedge clk);
+            end
+            enable <= 0;
+            @(posedge clk);
+            @(posedge clk);
+
+            test_count++;
+            if (data_out === 32'sd60) begin
+                pass_count++;
+                $display("  [PASS] B2B-6: clear mid-stream = %0d", data_out);
+            end else begin
+                fail_count++;
+                $display("  [FAIL] B2B-6: clear mid-stream = %0d, expected 60", data_out);
+            end
+        end
+
+        // B2B-7: Single cycle gap then resume (enable toggle)
+        // 2x(10*10) = 200, gap 1 cycle, 2x(10*10) = 200, total = 400
+        begin
+            clear_acc <= 1;
+            @(posedge clk);
+            clear_acc <= 0;
+
+            // First 2 cycles
+            data_in <= 10; weight_in <= 10; enable <= 1;
+            @(posedge clk);
+            data_in <= 10; weight_in <= 10; enable <= 1;
+            @(posedge clk);
+
+            // 1 cycle gap
+            enable <= 0;
+            @(posedge clk);
+
+            // Resume 2 cycles
+            data_in <= 10; weight_in <= 10; enable <= 1;
+            @(posedge clk);
+            data_in <= 10; weight_in <= 10; enable <= 1;
+            @(posedge clk);
+
+            enable <= 0;
+            @(posedge clk);
+            @(posedge clk);
+
+            test_count++;
+            if (data_out === 32'sd400) begin
+                pass_count++;
+                $display("  [PASS] B2B-7: gap-resume = %0d", data_out);
+            end else begin
+                fail_count++;
+                $display("  [FAIL] B2B-7: gap-resume = %0d, expected 400", data_out);
+            end
+        end
+
+        //=====================================================================
         // Test Summary
         //=====================================================================
         $display("");
@@ -225,14 +448,6 @@ module mac_unit_tb;
         $display("!!! SIMULATION TIMEOUT !!!");
         $display("");
         $finish;
-    end
-
-    //-------------------------------------------------------------------------
-    // Waveform Dump (for Vivado)
-    //-------------------------------------------------------------------------
-    initial begin
-        $dumpfile("mac_unit_tb.vcd");
-        $dumpvars(0, mac_unit_tb);
     end
 
 endmodule
