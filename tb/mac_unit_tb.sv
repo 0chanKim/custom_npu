@@ -15,10 +15,10 @@ module mac_unit_tb;
     parameter int WEIGHT_WIDTH = 8;
     parameter int OUTPUT_WIDTH = 32;
     parameter int CLK_PERIOD   = 10;
-    parameter int NUM_OPS      = 289;
+    parameter int NUM_OPS      = 336;  // seed=42 기준, C reference 재생성 시 업데이트 필요
 
     // Test data path (update this path for your environment)
-    parameter string DATA_PATH = "/home/yc/yc_npu/sw/ref/";
+    parameter string DATA_PATH = "/home/yc/yc_npu/sw/ref/hex_data/";
 
     //-------------------------------------------------------------------------
     // DUT Signals

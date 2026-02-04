@@ -22,4 +22,4 @@ run: $(TARGET)
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET) $(OBJS) *.hex
+	rm -f $(TARGET) $(OBJS) hex_data/*.hex
