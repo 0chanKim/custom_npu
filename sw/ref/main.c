@@ -105,6 +105,155 @@ void generate_mac_test_hex(int seed) {
 }
 
 //=============================================================================
+// GEMV SUB-ARRAY TEST HEX GENERATION (fixed filenames for TB)
+//=============================================================================
+
+#define GEMV_SUBARRAY_NUM_TESTS 20
+
+void generate_gemv_subarray_test_hex(int seed) {
+    printf("\n");
+    printf("=============================================================\n");
+    printf("GEMV Sub-array Test Hex Generation (seed=%d)\n", seed);
+    printf("=============================================================\n");
+
+    int num_tests   = GEMV_SUBARRAY_NUM_TESTS;
+    int input_size  = SUBARRAY_COLS;                    // 8
+    int weight_size = SUBARRAY_ROWS * SUBARRAY_COLS;    // 256
+    int output_size = SUBARRAY_ROWS;                    // 32
+
+    int8_t*  all_input  = (int8_t*)calloc(num_tests * input_size, sizeof(int8_t));
+    int8_t*  all_weight = (int8_t*)calloc(num_tests * weight_size, sizeof(int8_t));
+    int32_t* all_output = (int32_t*)calloc(num_tests * output_size, sizeof(int32_t));
+
+    srand(seed);
+
+    for (int t = 0; t < num_tests; t++) {
+        int8_t*  input  = &all_input[t * input_size];
+        int8_t*  weight = &all_weight[t * weight_size];
+        int32_t* output = &all_output[t * output_size];
+
+        // Generate random input and weight
+        for (int i = 0; i < input_size; i++)
+            input[i] = (int8_t)((rand() % 256) - 128);
+        for (int i = 0; i < weight_size; i++)
+            weight[i] = (int8_t)((rand() % 256) - 128);
+
+        // Compute expected output: output[r] = sum_c(weight[r*cols+c] * input[c])
+        for (int r = 0; r < SUBARRAY_ROWS; r++) {
+            int32_t sum = 0;
+            for (int c = 0; c < SUBARRAY_COLS; c++) {
+                sum += (int32_t)weight[r * SUBARRAY_COLS + c] * (int32_t)input[c];
+            }
+            output[r] = sum;
+        }
+    }
+
+    printf("  Total test cases: %d\n", num_tests);
+
+    // Dump hex files (fixed names, no seed in filename)
+    dump_to_hex_file(HEX_DIR "gemv_test_input.hex",  all_input,  num_tests * input_size, 8);
+    dump_to_hex_file(HEX_DIR "gemv_test_weight.hex", all_weight, num_tests * weight_size, 8);
+    dump_to_hex_file(HEX_DIR "gemv_test_output.hex", all_output, num_tests * output_size, 32);
+
+    free(all_input);
+    free(all_weight);
+    free(all_output);
+}
+
+//=============================================================================
+// GEMV CTRL TEST HEX GENERATION (for gemv_ctrl_tb)
+//=============================================================================
+
+#define CTRL_ROWS      16
+#define CTRL_COLS      4
+#define CTRL_NUM_TESTS 8
+#define CTRL_MAX_K     32
+
+void generate_gemv_ctrl_test_hex(int seed) {
+    printf("\n");
+    printf("=============================================================\n");
+    printf("GEMV Ctrl Test Hex Generation (seed=%d)\n", seed);
+    printf("=============================================================\n");
+    printf("  ROWS=%d, COLS=%d, NUM_TESTS=%d, MAX_K=%d\n",
+           CTRL_ROWS, CTRL_COLS, CTRL_NUM_TESTS, CTRL_MAX_K);
+
+    int dim_k_values[CTRL_NUM_TESTS] = {4, 8, 12, 16, 20, 24, 28, 32};
+
+    // Allocate arrays with MAX_K stride (zero-padded)
+    int total_input  = CTRL_NUM_TESTS * CTRL_MAX_K;
+    int total_weight = CTRL_NUM_TESTS * CTRL_ROWS * CTRL_MAX_K;
+    int total_output = CTRL_NUM_TESTS * CTRL_ROWS;
+
+    int8_t*  all_input  = (int8_t*)calloc(total_input, sizeof(int8_t));
+    int8_t*  all_weight = (int8_t*)calloc(total_weight, sizeof(int8_t));
+    int32_t* all_output = (int32_t*)calloc(total_output, sizeof(int32_t));
+
+    srand(seed);
+
+    for (int t = 0; t < CTRL_NUM_TESTS; t++) {
+        int dim_k = dim_k_values[t];
+        int base_input  = t * CTRL_MAX_K;
+        int base_weight = t * CTRL_ROWS * CTRL_MAX_K;
+        int base_output = t * CTRL_ROWS;
+
+        // Generate random input (only dim_k entries, rest stays 0)
+        for (int k = 0; k < dim_k; k++)
+            all_input[base_input + k] = (int8_t)((rand() % 256) - 128);
+
+        // Generate random weight (only dim_k columns per row, rest stays 0)
+        for (int r = 0; r < CTRL_ROWS; r++)
+            for (int k = 0; k < dim_k; k++)
+                all_weight[base_weight + r * CTRL_MAX_K + k] =
+                    (int8_t)((rand() % 256) - 128);
+
+        // Compute expected output: tile-based accumulation (mimics RTL)
+        int num_tiles = (dim_k + CTRL_COLS - 1) / CTRL_COLS;
+        for (int r = 0; r < CTRL_ROWS; r++)
+            all_output[base_output + r] = 0;
+
+        for (int tile = 0; tile < num_tiles; tile++) {
+            for (int r = 0; r < CTRL_ROWS; r++) {
+                for (int c = 0; c < CTRL_COLS; c++) {
+                    int k = tile * CTRL_COLS + c;
+                    int8_t inp = all_input[base_input + k];
+                    int8_t wgt = all_weight[base_weight + r * CTRL_MAX_K + k];
+                    all_output[base_output + r] += (int32_t)inp * (int32_t)wgt;
+                }
+            }
+        }
+
+        printf("  Test %d: dim_k=%d, num_tiles=%d\n", t, dim_k, num_tiles);
+    }
+
+    // Dump hex files
+    dump_to_hex_file(HEX_DIR "gemv_ctrl_test_input.hex",
+                     all_input, total_input, 8);
+    dump_to_hex_file(HEX_DIR "gemv_ctrl_test_weight.hex",
+                     all_weight, total_weight, 8);
+    dump_to_hex_file(HEX_DIR "gemv_ctrl_test_output.hex",
+                     all_output, total_output, 32);
+
+    // Dump dim_k values as 32-bit hex
+    FILE *f_dimk = fopen(HEX_DIR "gemv_ctrl_test_dimk.hex", "w");
+    if (!f_dimk) {
+        printf("ERROR: Cannot open dimk hex file!\n");
+    } else {
+        for (int t = 0; t < CTRL_NUM_TESTS; t++)
+            fprintf(f_dimk, "%08X\n", (uint32_t)dim_k_values[t]);
+        fclose(f_dimk);
+    }
+
+    printf("  Generated: gemv_ctrl_test_input.hex  (%d entries, 8bit)\n", total_input);
+    printf("  Generated: gemv_ctrl_test_weight.hex (%d entries, 8bit)\n", total_weight);
+    printf("  Generated: gemv_ctrl_test_output.hex (%d entries, 32bit)\n", total_output);
+    printf("  Generated: gemv_ctrl_test_dimk.hex   (%d entries, 32bit)\n", CTRL_NUM_TESTS);
+
+    free(all_input);
+    free(all_weight);
+    free(all_output);
+}
+
+//=============================================================================
 // GEMV TEST (seed-based random, with tiled vs direct verification)
 //=============================================================================
 
@@ -159,14 +308,8 @@ void test_gemv(int seed, int input_dim, int output_dim) {
            (output_dim + SUBARRAY_ROWS - 1) / SUBARRAY_ROWS,
            (input_dim + SUBARRAY_COLS - 1) / SUBARRAY_COLS);
 
-    // Dump hex files
-    char fname[128];
-    sprintf(fname, HEX_DIR "gemv_s%d_input.hex", seed);
-    dump_to_hex_file(fname, input, input_dim, 8);
-    sprintf(fname, HEX_DIR "gemv_s%d_weight.hex", seed);
-    dump_to_hex_file(fname, weights, output_dim * input_dim, 8);
-    sprintf(fname, HEX_DIR "gemv_s%d_output.hex", seed);
-    dump_to_hex_file(fname, output_tiled, output_dim, 32);
+    // Note: hex files for TB are generated by generate_gemv_subarray_test_hex()
+    // test_gemv() is for tiled vs direct verification only
 
     free(input);
     free(weights);
@@ -277,7 +420,19 @@ int main(int argc, char* argv[]) {
     generate_mac_test_hex(seed);
 
     //=========================================================================
-    // GEMV Tests (various dimensions)
+    // GEMV Sub-array Hex Generation (for gemv_subarray_tb)
+    //=========================================================================
+    printf("\n\n>>> GEMV SUB-ARRAY HEX GENERATION <<<\n");
+    generate_gemv_subarray_test_hex(seed);
+
+    //=========================================================================
+    // GEMV Ctrl Test Hex Generation (for gemv_ctrl_tb)
+    //=========================================================================
+    printf("\n\n>>> GEMV CTRL TEST HEX GENERATION <<<\n");
+    generate_gemv_ctrl_test_hex(seed);
+
+    //=========================================================================
+    // GEMV Tests (various dimensions, tiled vs direct verification)
     //=========================================================================
     printf("\n\n>>> GEMV TESTS <<<\n");
 

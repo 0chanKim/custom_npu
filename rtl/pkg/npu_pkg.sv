@@ -45,6 +45,12 @@ package npu_pkg;
     parameter logic [11:0] REG_PE_EN_2    = 12'h014;  // Array[2] PE enable [3:0]
     parameter logic [11:0] REG_PE_EN_3    = 12'h018;  // Array[3] PE enable [3:0]
     parameter logic [11:0] REG_CONFIG     = 12'h01C;  // Configuration register
+    parameter logic [11:0] REG_DIM_M      = 12'h020;  // M dimension (output rows)
+    parameter logic [11:0] REG_DIM_K      = 12'h024;  // K dimension (shared/accumulate)
+    parameter logic [11:0] REG_DIM_N      = 12'h028;  // N dimension (output cols)
+    parameter logic [11:0] REG_ADDR_INPUT = 12'h02C;  // Input data base address
+    parameter logic [11:0] REG_ADDR_WEIGHT= 12'h030;  // Weight data base address
+    parameter logic [11:0] REG_ADDR_OUTPUT= 12'h034;  // Output data base address
 
     //-------------------------------------------------------------------------
     // Status Bits

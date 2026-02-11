@@ -17,6 +17,7 @@ module gemv_subarray_tb;
     parameter int SUBARRAY_ROWS = 32;
     parameter int SUBARRAY_COLS = 8;
     parameter int CLK_PERIOD    = 10;
+    parameter int NUM_TESTS     = 20;  // seed=42 기준, C reference 재생성 시 업데이트 필요
 
     // Test data path (update this path for your environment)
     parameter string DATA_PATH = "/home/yc/yc_npu/sw/ref/hex_data/";
@@ -36,9 +37,9 @@ module gemv_subarray_tb;
     //-------------------------------------------------------------------------
     // Reference Data Memory
     //-------------------------------------------------------------------------
-    logic [INPUT_WIDTH-1:0]  ref_input  [0:SUBARRAY_COLS-1];
-    logic [WEIGHT_WIDTH-1:0] ref_weight [0:SUBARRAY_ROWS*SUBARRAY_COLS-1];
-    logic [OUTPUT_WIDTH-1:0] ref_output [0:SUBARRAY_ROWS-1];
+    logic [INPUT_WIDTH-1:0]  ref_input  [0:NUM_TESTS*SUBARRAY_COLS-1];
+    logic [WEIGHT_WIDTH-1:0] ref_weight [0:NUM_TESTS*SUBARRAY_ROWS*SUBARRAY_COLS-1];
+    logic [OUTPUT_WIDTH-1:0] ref_output [0:NUM_TESTS*SUBARRAY_ROWS-1];
 
     //-------------------------------------------------------------------------
     // Test Variables
@@ -46,8 +47,6 @@ module gemv_subarray_tb;
     int test_count;
     int pass_count;
     int fail_count;
-    int error_idx;
-    string current_test;
 
     //-------------------------------------------------------------------------
     // DUT Instance
@@ -81,7 +80,7 @@ module gemv_subarray_tb;
     // Test Tasks
     //-------------------------------------------------------------------------
 
-    // Initialize signals
+    // Initialize signals (blocking OK for initial values)
     task automatic init_signals();
         rst_n     = 0;
         enable    = 0;
@@ -102,49 +101,49 @@ module gemv_subarray_tb;
         repeat(2) @(posedge clk);
     endtask
 
-    // Load test data from hex files
-    task automatic load_test_data(string test_name);
-        string input_file, weight_file, output_file;
+    //-------------------------------------------------------------------------
+    // Load Reference Data
+    //-------------------------------------------------------------------------
+    task automatic load_test_data();
+        $display("  Loading: %sgemv_test_input.hex", DATA_PATH);
+        $readmemh({DATA_PATH, "gemv_test_input.hex"},  ref_input);
 
-        input_file  = {DATA_PATH, test_name, "_input.hex"};
-        weight_file = {DATA_PATH, test_name, "_weight.hex"};
-        output_file = {DATA_PATH, test_name, "_output.hex"};
+        $display("  Loading: %sgemv_test_weight.hex", DATA_PATH);
+        $readmemh({DATA_PATH, "gemv_test_weight.hex"}, ref_weight);
 
-        $display("  Loading: %s", input_file);
-        $readmemh(input_file, ref_input);
-
-        $display("  Loading: %s", weight_file);
-        $readmemh(weight_file, ref_weight);
-
-        $display("  Loading: %s", output_file);
-        $readmemh(output_file, ref_output);
-
-        current_test = test_name;
+        $display("  Loading: %sgemv_test_output.hex", DATA_PATH);
+        $readmemh({DATA_PATH, "gemv_test_output.hex"}, ref_output);
     endtask
 
-    // Apply input data to DUT
-    task automatic apply_inputs();
+    //-------------------------------------------------------------------------
+    // Single GEMV operation from reference data
+    //-------------------------------------------------------------------------
+    task automatic do_gemv_op(int idx);
+        int input_base, weight_base;
+
+        input_base  = idx * SUBARRAY_COLS;
+        weight_base = idx * SUBARRAY_ROWS * SUBARRAY_COLS;
+
         @(posedge clk);
         // Apply input vector
         for (int c = 0; c < SUBARRAY_COLS; c++) begin
-            input_vector[c] <= ref_input[c];
+            input_vector[c] <= ref_input[input_base + c];
         end
 
         // Apply weight matrix (convert from linear to 2D)
         for (int r = 0; r < SUBARRAY_ROWS; r++) begin
             for (int c = 0; c < SUBARRAY_COLS; c++) begin
-                weight_matrix[r][c] <= ref_weight[r * SUBARRAY_COLS + c];
+                weight_matrix[r][c] <= ref_weight[weight_base + r * SUBARRAY_COLS + c];
             end
         end
-    endtask
 
-    // Run computation
-    task automatic run_computation();
+        // Clear accumulator
         @(posedge clk);
         clear_acc <= 1;
         @(posedge clk);
         clear_acc <= 0;
 
+        // Enable computation
         @(posedge clk);
         enable <= 1;
         @(posedge clk);
@@ -155,63 +154,54 @@ module gemv_subarray_tb;
         @(posedge clk);
     endtask
 
-    // Check results against reference
-    task automatic check_results();
+    //-------------------------------------------------------------------------
+    // Check result against reference
+    //-------------------------------------------------------------------------
+    task automatic check_result(int idx);
+        int output_base;
         int mismatch_found;
+
+        output_base    = idx * SUBARRAY_ROWS;
         mismatch_found = 0;
 
         test_count++;
 
         for (int r = 0; r < SUBARRAY_ROWS; r++) begin
-            if ($signed(output_vector[r]) !== $signed(ref_output[r])) begin
+            if ($signed(output_vector[r]) !== $signed(ref_output[output_base + r])) begin
                 if (!mismatch_found) begin
                     fail_count++;
                     mismatch_found = 1;
-                    error_idx = r;
+                    $display("===========================================================");
+                    $display("[FAIL] Test #%0d", idx);
+                    $display("===========================================================");
+                    $display("  First mismatch at row [%0d]:", r);
+                    $display("    RTL Output:   %0d (0x%08X)",
+                             $signed(output_vector[r]), output_vector[r]);
+                    $display("    C Reference:  %0d (0x%08X)",
+                             $signed(ref_output[output_base + r]), ref_output[output_base + r]);
+                    $display("");
                 end
             end
         end
 
         if (!mismatch_found) begin
             pass_count++;
-            $display("[PASS] %s", current_test);
         end else begin
-            $display("===========================================================");
-            $display("[FAIL] %s", current_test);
-            $display("===========================================================");
-            $display("  First mismatch at index [%0d]:", error_idx);
-            $display("    RTL Output:   %0d (0x%08X)",
-                     $signed(output_vector[error_idx]), output_vector[error_idx]);
-            $display("    C Reference:  %0d (0x%08X)",
-                     $signed(ref_output[error_idx]), ref_output[error_idx]);
-            $display("");
-
             // Print all mismatches
             $display("  All mismatches:");
             for (int r = 0; r < SUBARRAY_ROWS; r++) begin
-                if ($signed(output_vector[r]) !== $signed(ref_output[r])) begin
+                if ($signed(output_vector[r]) !== $signed(ref_output[output_base + r])) begin
                     $display("    [%2d] RTL=%0d, REF=%0d",
-                             r, $signed(output_vector[r]), $signed(ref_output[r]));
+                             r, $signed(output_vector[r]),
+                             $signed(ref_output[output_base + r]));
                 end
             end
-
             $display("===========================================================");
             $display("");
             $display("!!! SIMULATION STOPPED DUE TO MISMATCH !!!");
             $display("");
             $finish;
         end
-    endtask
-
-    // Run single test with file loading
-    task automatic run_test(string test_name);
-        $display("");
-        $display("--- Running Test: %s ---", test_name);
-
-        load_test_data(test_name);
-        apply_inputs();
-        run_computation();
-        check_results();
     endtask
 
     //-------------------------------------------------------------------------
@@ -227,52 +217,31 @@ module gemv_subarray_tb;
         $display("  INPUT_WIDTH:   %0d", INPUT_WIDTH);
         $display("  WEIGHT_WIDTH:  %0d", WEIGHT_WIDTH);
         $display("  OUTPUT_WIDTH:  %0d", OUTPUT_WIDTH);
+        $display("  NUM_TESTS:     %0d", NUM_TESTS);
         $display("  DATA_PATH:     %s", DATA_PATH);
         $display("=============================================================");
+        $display("");
 
         // Initialize
         init_signals();
+
+        // Load reference data from C-generated hex files
+        $display("--- Loading C Reference Data ---");
+        load_test_data();
+        $display("");
+
+        // Reset
         do_reset();
 
         //=====================================================================
-        // Run Tests with C Reference Data
+        // Run all GEMV operations from reference data
         //=====================================================================
+        $display("--- Running %0d GEMV Operations ---", NUM_TESTS);
 
-        // Test 1: Scaled rows pattern (easiest to debug)
-        run_test("test_scaled");
-
-        // Test 2: All ones pattern
-        run_test("test_allones");
-
-        // Test 3: Identity-like pattern
-        run_test("test_identity");
-
-        // Test 4: Alternating signs (cancellation)
-        run_test("test_alternating");
-
-        // Test 5: Maximum values stress test
-        run_test("test_maxval");
-
-        // Test 6: Minimum values stress test
-        run_test("test_minval");
-
-        // Test 7: Mixed signs (max * min)
-        run_test("test_mixed");
-
-        // Test 8: Sparse pattern
-        run_test("test_sparse");
-
-        // Test 9: Random pattern (seed 42)
-        run_test("test_random42");
-
-        // Test 10: Boundary - single element
-        run_test("test_single");
-
-        // Test 11: Boundary - last element
-        run_test("test_last");
-
-        // Test 12: Boundary - first/last row
-        run_test("test_firstlast");
+        for (int i = 0; i < NUM_TESTS; i++) begin
+            do_gemv_op(i);
+            check_result(i);
+        end
 
         //=====================================================================
         // Test Summary

@@ -50,6 +50,16 @@ module axi_lite_slave #(
     output logic [NUM_LARGE_ARRAYS-1:0][3:0] pe_enable,  // 4 PEs per array (2x2)
     output logic [AXI_DATA_WIDTH-1:0] config_reg,
 
+    // Dimension registers
+    output logic [AXI_DATA_WIDTH-1:0] dim_m,
+    output logic [AXI_DATA_WIDTH-1:0] dim_k,
+    output logic [AXI_DATA_WIDTH-1:0] dim_n,
+
+    // Address registers
+    output logic [AXI_DATA_WIDTH-1:0] addr_input,
+    output logic [AXI_DATA_WIDTH-1:0] addr_weight,
+    output logic [AXI_DATA_WIDTH-1:0] addr_output,
+
     //-------------------------------------------------------------------------
     // Status Inputs from NPU
     //-------------------------------------------------------------------------
@@ -69,6 +79,12 @@ module axi_lite_slave #(
     localparam logic [11:0] REG_PE_EN_2    = 12'h014;
     localparam logic [11:0] REG_PE_EN_3    = 12'h018;
     localparam logic [11:0] REG_CONFIG     = 12'h01C;
+    localparam logic [11:0] REG_DIM_M      = 12'h020;
+    localparam logic [11:0] REG_DIM_K      = 12'h024;
+    localparam logic [11:0] REG_DIM_N      = 12'h028;
+    localparam logic [11:0] REG_ADDR_INPUT = 12'h02C;
+    localparam logic [11:0] REG_ADDR_WEIGHT= 12'h030;
+    localparam logic [11:0] REG_ADDR_OUTPUT= 12'h034;
 
     //-------------------------------------------------------------------------
     // Internal Registers
@@ -77,6 +93,12 @@ module axi_lite_slave #(
     logic [AXI_DATA_WIDTH-1:0] reg_cluster_en;
     logic [AXI_DATA_WIDTH-1:0] reg_pe_en [NUM_LARGE_ARRAYS];
     logic [AXI_DATA_WIDTH-1:0] reg_config;
+    logic [AXI_DATA_WIDTH-1:0] reg_dim_m;
+    logic [AXI_DATA_WIDTH-1:0] reg_dim_k;
+    logic [AXI_DATA_WIDTH-1:0] reg_dim_n;
+    logic [AXI_DATA_WIDTH-1:0] reg_addr_input;
+    logic [AXI_DATA_WIDTH-1:0] reg_addr_weight;
+    logic [AXI_DATA_WIDTH-1:0] reg_addr_output;
 
     // AXI state machine
     typedef enum logic [1:0] {
@@ -137,22 +159,34 @@ module axi_lite_slave #(
     //-------------------------------------------------------------------------
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            reg_ctrl       <= '0;
-            reg_cluster_en <= '0;
-            reg_pe_en[0]   <= 4'hF;  // Default: all PEs enabled
-            reg_pe_en[1]   <= 4'hF;
-            reg_pe_en[2]   <= 4'hF;
-            reg_pe_en[3]   <= 4'hF;
-            reg_config     <= '0;
+            reg_ctrl        <= '0;
+            reg_cluster_en  <= '0;
+            reg_pe_en[0]    <= 4'hF;  // Default: all PEs enabled
+            reg_pe_en[1]    <= 4'hF;
+            reg_pe_en[2]    <= 4'hF;
+            reg_pe_en[3]    <= 4'hF;
+            reg_config      <= '0;
+            reg_dim_m       <= '0;
+            reg_dim_k       <= '0;
+            reg_dim_n       <= '0;
+            reg_addr_input  <= '0;
+            reg_addr_weight <= '0;
+            reg_addr_output <= '0;
         end else if (axi_state == AXI_IDLE && s_axi_awvalid && s_axi_wvalid) begin
             case (s_axi_awaddr[11:0])
-                REG_CTRL:       reg_ctrl       <= s_axi_wdata;
-                REG_CLUSTER_EN: reg_cluster_en <= s_axi_wdata;
-                REG_PE_EN_0:    reg_pe_en[0]   <= s_axi_wdata;
-                REG_PE_EN_1:    reg_pe_en[1]   <= s_axi_wdata;
-                REG_PE_EN_2:    reg_pe_en[2]   <= s_axi_wdata;
-                REG_PE_EN_3:    reg_pe_en[3]   <= s_axi_wdata;
-                REG_CONFIG:     reg_config     <= s_axi_wdata;
+                REG_CTRL:        reg_ctrl        <= s_axi_wdata;
+                REG_CLUSTER_EN:  reg_cluster_en  <= s_axi_wdata;
+                REG_PE_EN_0:     reg_pe_en[0]    <= s_axi_wdata;
+                REG_PE_EN_1:     reg_pe_en[1]    <= s_axi_wdata;
+                REG_PE_EN_2:     reg_pe_en[2]    <= s_axi_wdata;
+                REG_PE_EN_3:     reg_pe_en[3]    <= s_axi_wdata;
+                REG_CONFIG:      reg_config      <= s_axi_wdata;
+                REG_DIM_M:       reg_dim_m       <= s_axi_wdata;
+                REG_DIM_K:       reg_dim_k       <= s_axi_wdata;
+                REG_DIM_N:       reg_dim_n       <= s_axi_wdata;
+                REG_ADDR_INPUT:  reg_addr_input  <= s_axi_wdata;
+                REG_ADDR_WEIGHT: reg_addr_weight <= s_axi_wdata;
+                REG_ADDR_OUTPUT: reg_addr_output <= s_axi_wdata;
                 default: ;
             endcase
         end else begin
@@ -175,8 +209,14 @@ module axi_lite_slave #(
             REG_PE_EN_1:    s_axi_rdata = reg_pe_en[1];
             REG_PE_EN_2:    s_axi_rdata = reg_pe_en[2];
             REG_PE_EN_3:    s_axi_rdata = reg_pe_en[3];
-            REG_CONFIG:     s_axi_rdata = reg_config;
-            default:        s_axi_rdata = '0;
+            REG_CONFIG:      s_axi_rdata = reg_config;
+            REG_DIM_M:       s_axi_rdata = reg_dim_m;
+            REG_DIM_K:       s_axi_rdata = reg_dim_k;
+            REG_DIM_N:       s_axi_rdata = reg_dim_n;
+            REG_ADDR_INPUT:  s_axi_rdata = reg_addr_input;
+            REG_ADDR_WEIGHT: s_axi_rdata = reg_addr_weight;
+            REG_ADDR_OUTPUT: s_axi_rdata = reg_addr_output;
+            default:         s_axi_rdata = '0;
         endcase
     end
 
@@ -191,5 +231,12 @@ module axi_lite_slave #(
     assign pe_enable[2]    = reg_pe_en[2][3:0];
     assign pe_enable[3]    = reg_pe_en[3][3:0];
     assign config_reg      = reg_config;
+
+    assign dim_m           = reg_dim_m;
+    assign dim_k           = reg_dim_k;
+    assign dim_n           = reg_dim_n;
+    assign addr_input      = reg_addr_input;
+    assign addr_weight     = reg_addr_weight;
+    assign addr_output     = reg_addr_output;
 
 endmodule
