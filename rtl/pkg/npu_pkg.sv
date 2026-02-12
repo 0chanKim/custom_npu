@@ -19,8 +19,8 @@ package npu_pkg;
     parameter int SUBARRAY_COLS    = 8;   // Sub-array cols (input vector size)
     parameter int PE_ARRAY_ROWS    = 2;   // PE array rows
     parameter int PE_ARRAY_COLS    = 2;   // PE array cols
-    parameter int NUM_LARGE_ARRAYS = 4;   // Number of large PE arrays
-
+    //  parameter int NUM_LARGE_ARRAYS = 4;   // Number of large PE arrays
+    parameter int NUM_LARGE_ARRAYS = PE_ARRAY_COLS * PE_ARRAY_ROWS;   // Number of large PE arrays
     //-------------------------------------------------------------------------
     // Derived Parameters
     //-------------------------------------------------------------------------
